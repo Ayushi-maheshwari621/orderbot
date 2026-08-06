@@ -76,3 +76,97 @@ def search_menu(query: str) -> List[Dict[str, Any]]:
     for item in menu
     if item.get("available") and _item_matches_query(item, query)
 ]
+
+# In-memory shopping cart
+# Maps dish_id to quantity
+_CART: Dict[int, int] = {}
+
+def add_to_cart(dish_id: int, quantity: int) -> Dict[str, Any]:
+    """
+    Add a specific quantity of a dish to the shopping cart.
+    
+    Args:
+        dish_id (int): The ID of the dish to add.
+        quantity (int): The number of units to add (must be > 0).
+        
+    Returns:
+        Dict[str, Any]: A structured response indicating success or failure.
+    """
+    if quantity <= 0:
+        return {"status": "error", "message": "Quantity must be greater than 0."}
+        
+    dish = get_dish_by_id(dish_id)
+    
+    if not dish:
+        return {"status": "error", "message": f"Dish with ID {dish_id} does not exist."}
+        
+    if not dish.get("available"):
+        return {"status": "error", "message": f"Dish '{dish.get('name')}' is currently unavailable."}
+        
+    _CART[dish_id] = _CART.get(dish_id, 0) + quantity
+    return {"status": "success", "message": f"Added {quantity} of {dish.get('name')} to the cart."}
+
+def remove_from_cart(dish_id: int) -> Dict[str, Any]:
+    """
+    Remove a dish completely from the shopping cart.
+    
+    Args:
+        dish_id (int): The ID of the dish to remove.
+        
+    Returns:
+        Dict[str, Any]: A structured response indicating success or failure.
+    """
+    if dish_id not in _CART:
+        return {"status": "error", "message": f"Dish with ID {dish_id} is not in the cart."}
+        
+    del _CART[dish_id]
+    return {"status": "success", "message": f"Removed dish ID {dish_id} from the cart."}
+
+def view_cart() -> Dict[str, Any]:
+    """
+    View the current contents of the shopping cart.
+    
+    Returns:
+        Dict[str, Any]: A dictionary containing a list of items (with full dish info, 
+                        quantity, and subtotal) and the total cart value.
+    """
+    menu = load_menu()
+    cart_items = []
+    total_value = 0.0
+    
+    for dish_id, quantity in _CART.items():
+        # Find the dish in the menu
+        dish = get_dish_by_id(dish_id)
+        
+        if dish:
+            subtotal = dish.get("price", 0.0) * quantity
+            total_value += subtotal
+            
+            cart_items.append({
+                "dish": dish,
+                "quantity": quantity,
+                "subtotal": subtotal
+            })
+            
+    return {
+    "items": cart_items,
+    "item_count": sum(_CART.values()),
+    "total": total_value
+}
+
+def clear_cart() -> Dict[str, Any]:
+    """
+    Clear all items from the shopping cart.
+    
+    Returns:
+        Dict[str, Any]: A structured response indicating success.
+    """
+    _CART.clear()
+    return {"status": "success", "message": "Cart cleared successfully."}
+
+def get_dish_by_id(dish_id: int) -> Dict[str, Any] | None:
+    """
+    Retrieve a dish by its ID from the cached menu.
+    """
+    menu = load_menu()
+    return next((item for item in menu if item.get("id") == dish_id), None)
