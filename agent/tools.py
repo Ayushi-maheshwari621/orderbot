@@ -1,6 +1,11 @@
 import json
 import os
+import sys
 from typing import List, Dict, Any
+
+# Ensure we can import from db
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from db.database import save_order
 
 # Cache the menu data at the module level
 _MENU_CACHE: List[Dict[str, Any]] | None = None
@@ -170,3 +175,49 @@ def get_dish_by_id(dish_id: int) -> Dict[str, Any] | None:
     """
     menu = load_menu()
     return next((item for item in menu if item.get("id") == dish_id), None)
+
+def place_order(customer_name: str) -> Dict[str, Any]:
+    """
+    Place an order for the current shopping cart.
+    
+    Args:
+        customer_name (str): The name of the customer placing the order.
+        
+    Returns:
+        Dict[str, Any]: A structured response indicating success or failure.
+    """
+    cart = view_cart()
+    
+    if cart.get("item_count", 0) == 0:
+        return {"status": "error", "message": "Cannot place an order with an empty cart."}
+        
+    # Prepare the snapshot of items for the database
+    order_items = []
+    for item in cart.get("items", []):
+        dish = item.get("dish", {})
+        order_items.append({
+            "dish_id": dish.get("id"),
+            "name": dish.get("name"),
+            "price": dish.get("price"),
+            "quantity": item.get("quantity"),
+            "subtotal": item.get("subtotal")
+        })
+        
+    total = cart.get("total", 0.0)
+    
+    try:
+        # Save to database
+        order_id = save_order(customer_name=customer_name, items=order_items, total=total, status="Placed")
+        
+        # Clear the cart only after successful save
+        clear_cart()
+        
+        return {
+            "status": "success",
+            "order_id": order_id,
+            "customer_name": customer_name,
+            "total": total,
+            "message": "Order placed successfully."
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to place order: {str(e)}"}
