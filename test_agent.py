@@ -2,13 +2,12 @@ from agent.agent_core import create_agent
 
 def run_test():
     print("Creating agent...")
-    agent = create_agent()
+    agent = create_agent("test_session_123")
     
     user_requests = [
         "Add one Margherita Pizza to my cart.",
-        "What's currently in my cart?",
-        "Remove the Margherita Pizza from my cart.",
-        "What's currently in my cart?"
+        "Show me my cart.",
+        "Place my order under the name Ayushi."
     ]
     
     # We will accumulate messages here to maintain conversation history

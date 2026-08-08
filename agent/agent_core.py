@@ -53,26 +53,62 @@ You are OrderBot, a restaurant ordering assistant.
     
     return system_prompt
 
-def get_tools() -> List[Any]:
+def get_tools(session_id: str) -> List[Any]:
     """
     Return a list of LangChain-compatible tools exposed from agent.tools.
+    The tools are bound to the specific session_id.
     """
+    @tool
+    def search_menu(query: str):
+        """Search the menu for items matching the given query case-insensitively."""
+        return agent_tools.search_menu(query)
+        
+    @tool
+    def get_dish_by_id(dish_id: int):
+        """Retrieve a dish by its ID from the cached menu."""
+        return agent_tools.get_dish_by_id(dish_id)
+
+    @tool
+    def add_to_cart(dish_id: int, quantity: int):
+        """Add a specific quantity of a dish to the shopping cart."""
+        return agent_tools.add_to_cart(session_id, dish_id, quantity)
+        
+    @tool
+    def remove_from_cart(dish_id: int):
+        """Remove a dish completely from the shopping cart."""
+        return agent_tools.remove_from_cart(session_id, dish_id)
+        
+    @tool
+    def view_cart():
+        """View the current contents of the shopping cart."""
+        return agent_tools.view_cart(session_id)
+        
+    @tool
+    def clear_cart():
+        """Clear all items from the shopping cart."""
+        return agent_tools.clear_cart(session_id)
+        
+    @tool
+    def place_order(customer_name: str):
+        """Place an order for the current shopping cart."""
+        return agent_tools.place_order(session_id, customer_name)
+        
     return [
-        tool(agent_tools.search_menu),
-        tool(agent_tools.get_dish_by_id),
-        tool(agent_tools.add_to_cart),
-        tool(agent_tools.remove_from_cart),
-        tool(agent_tools.view_cart),
-        tool(agent_tools.clear_cart),
-        tool(agent_tools.place_order)
+        search_menu,
+        get_dish_by_id,
+        add_to_cart,
+        remove_from_cart,
+        view_cart,
+        clear_cart,
+        place_order
     ]
 
-def create_agent():
+def create_agent(session_id: str):
     """
     Create and return the LangGraph ReAct agent.
     """
     llm = get_llm()
-    tools = get_tools()
+    tools = get_tools(session_id)
     system_prompt = build_system_prompt()
     
     # Create the agent with tools and system prompt
