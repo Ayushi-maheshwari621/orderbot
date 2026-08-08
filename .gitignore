@@ -4,3 +4,9 @@ __pycache__/
 .env
 db/orderbot.db
 .streamlit/secrets.toml
+data/raw/Swiggy.csv
+
+db/orders.db
+data/raw/
+.DS_Store
+**/.DS_Store
