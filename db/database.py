@@ -14,11 +14,13 @@ def get_connection():
 
 def initialize_database():
     """
-    Create the orders table if it doesn't already exist.
+    Create the orders, restaurants, and menu_items tables if they don't already exist.
     This function should be called at application startup to ensure the DB is ready.
     """
     conn = get_connection()
     cursor = conn.cursor()
+    
+    # Existing orders table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,6 +31,49 @@ def initialize_database():
             created_at TIMESTAMP NOT NULL
         )
     ''')
+    
+    # New restaurants table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS restaurants (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            city TEXT,
+            subcity TEXT,
+            address TEXT,
+            cuisine TEXT,
+            rating REAL,
+            rating_count TEXT,
+            cost_for_two TEXT,
+            license_no TEXT,
+            restaurant_link TEXT,
+            latitude REAL,
+            longitude REAL
+        )
+    ''')
+    
+    # New menu_items table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS menu_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            restaurant_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            category TEXT,
+            price REAL NOT NULL,
+            is_veg BOOLEAN,
+            currency TEXT NOT NULL DEFAULT 'INR',
+            FOREIGN KEY (restaurant_id) REFERENCES restaurants(id)
+        )
+    ''')
+    
+    # Indexes for expected queries
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_menu_items_restaurant_id ON menu_items(restaurant_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_menu_items_name ON menu_items(name)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_menu_items_category ON menu_items(category)')
+    
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_restaurants_name ON restaurants(name)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_restaurants_city ON restaurants(city)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_restaurants_cuisine ON restaurants(cuisine)')
+
     conn.commit()
     conn.close()
 

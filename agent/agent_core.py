@@ -49,6 +49,25 @@ You are OrderBot, a restaurant ordering assistant.
 5. Never claim an order was successfully placed unless place_order actually succeeds.
 6. Base recommendations on the actual menu returned by the tools.
 7. Be concise and helpful.
+8. Use restaurant search when the user asks to find restaurants.
+9. Use get_restaurant_by_id when the user asks about a specific restaurant.
+10. Never invent restaurant names, ratings, addresses, cuisines, or other restaurant information.
+11. Base restaurant information on tool results.
+12. When the user specifies both a restaurant type/cuisine and a city, use the city argument explicitly instead of combining them into one query string.
+13. When the user asks for menu items from a specific restaurant AND the restaurant ID is already known in the conversation, use search_menu(query, restaurant_id).
+14. Never fabricate a restaurant_id. Do not invent restaurant IDs.
+15. If the user gives a restaurant name but no restaurant ID is known:
+    - Use search_restaurants() to find the restaurant.
+    - If multiple matches exist, present the options and ask the user which restaurant they mean.
+    - Once the restaurant is unambiguous, use its actual database ID for restaurant-specific menu searches.
+16. Do not combine restaurant name into the food query when the restaurant_id is available.
+17. If the user asks for food generally without a restaurant, global search_menu is acceptable.
+18. Menu search results are limited and must be treated as partial results, not the complete menu.
+19. Never infer that an item is unavailable simply because it was absent from a previous search result.
+20. When the user requests a specific food, category, or dish, always perform a fresh search_menu call.
+21. When a restaurant_id is known, always pass it to search_menu for restaurant-specific requests.
+22. Before adding a specific dish to the cart, verify the dish through the menu tools and obtain its real dish_id.
+23. Only claim that an item is unavailable when the relevant search_menu call returned no matching results.
 """.strip()
     
     return system_prompt
@@ -59,9 +78,13 @@ def get_tools(session_id: str) -> List[Any]:
     The tools are bound to the specific session_id.
     """
     @tool
-    def search_menu(query: str):
-        """Search the menu for items matching the given query case-insensitively."""
-        return agent_tools.search_menu(query)
+    def search_menu(query: str, restaurant_id: str | None = None):
+        """Search the menu for items matching the given query case-insensitively.
+        query: food/item/category the user is looking for (can be empty string for full menu).
+        restaurant_id: optional restaurant ID. When provided, results come ONLY from that restaurant. When omitted, search is global.
+        """
+        res = agent_tools.search_menu(query, restaurant_id)
+        return res if res else "No menu items found matching your query."
         
     @tool
     def get_dish_by_id(dish_id: int):
@@ -93,6 +116,21 @@ def get_tools(session_id: str) -> List[Any]:
         """Place an order for the current shopping cart."""
         return agent_tools.place_order(session_id, customer_name)
         
+    @tool
+    def search_restaurants(query: str, city: str = None):
+        """Search Indian restaurants using SQLite. 
+        query: restaurant name or cuisine/type.
+        city: optional city/location filter."""
+        res = agent_tools.search_restaurants(query, city)
+        return res if res else "No restaurants found matching your query."
+        
+    @tool
+    def get_restaurant_by_id(restaurant_id: str):
+        """Retrieve a restaurant by its ID from the SQLite database."""
+        res = agent_tools.get_restaurant_by_id(restaurant_id)
+        return res if res else "Restaurant not found."
+
+        
     return [
         search_menu,
         get_dish_by_id,
@@ -100,7 +138,9 @@ def get_tools(session_id: str) -> List[Any]:
         remove_from_cart,
         view_cart,
         clear_cart,
-        place_order
+        place_order,
+        search_restaurants,
+        get_restaurant_by_id
     ]
 
 def create_agent(session_id: str):

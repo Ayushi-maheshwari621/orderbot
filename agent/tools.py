@@ -1,11 +1,12 @@
 import json
 import os
 import sys
+import sqlite3
 from typing import List, Dict, Any
 
 # Ensure we can import from db
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from db.database import save_order
+from db.database import save_order, get_connection
 
 # Cache the menu data at the module level
 _MENU_CACHE: List[Dict[str, Any]] | None = None
@@ -34,53 +35,64 @@ def load_menu() -> List[Dict[str, Any]]:
         
     return _MENU_CACHE
 
-def _item_matches_query(item: Dict[str, Any], query: str) -> bool:
+def search_menu(query: str, restaurant_id: str | None = None) -> List[Dict[str, Any]]:
     """
-    Check if a single menu item matches the search query.
-    Matches against name, category, cuisine, and description case-insensitively.
+    Search the SQLite menu for items matching the given query case-insensitively.
+    If restaurant_id is provided, only searches within that restaurant.
+    Returns a limited number of items to prevent blowing up the LLM context.
     
     Args:
-        item (Dict[str, Any]): The menu item to check.
-        query (str): The search query.
+        query (str): The text to search for across dish name and category.
+        restaurant_id (str, optional): The ID of the restaurant to filter by.
         
     Returns:
-        bool: True if the item matches the query, False otherwise.
+        List[Dict[str, Any]]: A list of menu items matching the query.
     """
-    search_fields = [
-        item.get('name', ''),
-        item.get('category', ''),
-        item.get('cuisine', ''),
-        item.get('description', '')
-    ]
-    
-    query_lower = query.lower()
-    for field in search_fields:
-        if field and query_lower in str(field).lower():
-            return True
+    try:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if restaurant_id and (not query or not query.strip()):
+            cursor.execute('''
+                SELECT id, restaurant_id, name, category, price, is_veg, currency 
+                FROM menu_items 
+                WHERE restaurant_id = ?
+                LIMIT 20
+            ''', (restaurant_id,))
+        elif not query or not query.strip():
+            return []
+        else:
+            search_term = f"%{query.strip()}%"
+            if restaurant_id:
+                cursor.execute('''
+                    SELECT id, restaurant_id, name, category, price, is_veg, currency 
+                    FROM menu_items 
+                    WHERE restaurant_id = ? 
+                    AND (name LIKE ? OR category LIKE ?)
+                    LIMIT 20
+                ''', (restaurant_id, search_term, search_term))
+            else:
+                cursor.execute('''
+                    SELECT id, restaurant_id, name, category, price, is_veg, currency 
+                    FROM menu_items 
+                    WHERE name LIKE ? OR category LIKE ?
+                    LIMIT 20
+                ''', (search_term, search_term))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        results = []
+        for row in rows:
+            dish = dict(row)
+            dish["available"] = True
+            results.append(dish)
             
-    return False
-
-def search_menu(query: str) -> List[Dict[str, Any]]:
-    """
-    Search the menu for items matching the given query case-insensitively.
-    Only returns items that are marked as available.
-    
-    Args:
-        query (str): The text to search for across dish name, category, cuisine, and description.
-        
-    Returns:
-        List[Dict[str, Any]]: A list of available menu items matching the query.
-    """
-    menu = load_menu()
-    
-    if not query or not query.strip():
+        return results
+    except Exception as e:
+        print(f"Database error in search_menu: {e}")
         return []
-        
-    return [
-    item
-    for item in menu
-    if item.get("available") and _item_matches_query(item, query)
-]
 
 # In-memory shopping carts
 # Maps session_id -> {dish_id -> quantity}
@@ -189,10 +201,30 @@ def clear_cart(session_id: str) -> Dict[str, Any]:
 
 def get_dish_by_id(dish_id: int) -> Dict[str, Any] | None:
     """
-    Retrieve a dish by its ID from the cached menu.
+    Retrieve a dish by its ID from the SQLite database.
     """
-    menu = load_menu()
-    return next((item for item in menu if item.get("id") == dish_id), None)
+    try:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, restaurant_id, name, category, price, is_veg, currency 
+            FROM menu_items 
+            WHERE id = ?
+        ''', (dish_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            dish = dict(row)
+            dish["available"] = True
+            return dish
+        return None
+    except Exception as e:
+        print(f"Database error in get_dish_by_id: {e}")
+        return None
 
 def place_order(session_id: str, customer_name: str) -> Dict[str, Any]:
     """
@@ -240,3 +272,76 @@ def place_order(session_id: str, customer_name: str) -> Dict[str, Any]:
         }
     except Exception as e:
         return {"status": "error", "message": f"Failed to place order: {str(e)}"}
+
+def search_restaurants(query: str, city: str | None = None) -> List[Dict[str, Any]]:
+    """
+    Search Indian restaurants using SQLite.
+    If city is provided, it explicitly filters by city and matches query against name or cuisine.
+    If city is not provided, it matches query against name, city, subcity, and cuisine case-insensitively.
+    Returns a limited number of items to prevent blowing up the LLM context.
+    """
+    try:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if city and (not query or not query.strip()):
+            city_term = f"%{city.strip()}%"
+            cursor.execute('''
+                SELECT id, name, city, subcity, address, cuisine, rating, rating_count, cost_for_two 
+                FROM restaurants 
+                WHERE city LIKE ? 
+                LIMIT 20
+            ''', (city_term,))
+        elif not query or not query.strip():
+            return []
+        else:
+            search_term = f"%{query.strip()}%"
+            if city:
+                city_term = f"%{city.strip()}%"
+                cursor.execute('''
+                    SELECT id, name, city, subcity, address, cuisine, rating, rating_count, cost_for_two 
+                    FROM restaurants 
+                    WHERE city LIKE ? 
+                    AND (name LIKE ? OR cuisine LIKE ?)
+                    LIMIT 20
+                ''', (city_term, search_term, search_term))
+            else:
+                cursor.execute('''
+                    SELECT id, name, city, subcity, address, cuisine, rating, rating_count, cost_for_two 
+                    FROM restaurants 
+                    WHERE name LIKE ? OR city LIKE ? OR subcity LIKE ? OR cuisine LIKE ?
+                    LIMIT 20
+                ''', (search_term, search_term, search_term, search_term))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"Database error in search_restaurants: {e}")
+        return []
+
+def get_restaurant_by_id(restaurant_id: str) -> Dict[str, Any] | None:
+    """
+    Retrieve a restaurant by its ID from the SQLite database.
+    Note: restaurant_id is a string (TEXT in SQLite).
+    """
+    try:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, name, city, subcity, address, cuisine, rating, rating_count, cost_for_two 
+            FROM restaurants 
+            WHERE id = ?
+        ''', (restaurant_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Database error in get_restaurant_by_id: {e}")
+        return None
