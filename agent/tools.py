@@ -82,15 +82,21 @@ def search_menu(query: str) -> List[Dict[str, Any]]:
     if item.get("available") and _item_matches_query(item, query)
 ]
 
-# In-memory shopping cart
-# Maps dish_id to quantity
-_CART: Dict[int, int] = {}
+# In-memory shopping carts
+# Maps session_id -> {dish_id -> quantity}
+_CARTS: Dict[str, Dict[int, int]] = {}
 
-def add_to_cart(dish_id: int, quantity: int) -> Dict[str, Any]:
+def _get_cart(session_id: str) -> Dict[int, int]:
+    if session_id not in _CARTS:
+        _CARTS[session_id] = {}
+    return _CARTS[session_id]
+
+def add_to_cart(session_id: str, dish_id: int, quantity: int) -> Dict[str, Any]:
     """
     Add a specific quantity of a dish to the shopping cart.
     
     Args:
+        session_id (str): The current user session ID.
         dish_id (int): The ID of the dish to add.
         quantity (int): The number of units to add (must be > 0).
         
@@ -108,29 +114,35 @@ def add_to_cart(dish_id: int, quantity: int) -> Dict[str, Any]:
     if not dish.get("available"):
         return {"status": "error", "message": f"Dish '{dish.get('name')}' is currently unavailable."}
         
-    _CART[dish_id] = _CART.get(dish_id, 0) + quantity
+    cart = _get_cart(session_id)
+    cart[dish_id] = cart.get(dish_id, 0) + quantity
     return {"status": "success", "message": f"Added {quantity} of {dish.get('name')} to the cart."}
 
-def remove_from_cart(dish_id: int) -> Dict[str, Any]:
+def remove_from_cart(session_id: str, dish_id: int) -> Dict[str, Any]:
     """
     Remove a dish completely from the shopping cart.
     
     Args:
+        session_id (str): The current user session ID.
         dish_id (int): The ID of the dish to remove.
         
     Returns:
         Dict[str, Any]: A structured response indicating success or failure.
     """
-    if dish_id not in _CART:
+    cart = _get_cart(session_id)
+    if dish_id not in cart:
         return {"status": "error", "message": f"Dish with ID {dish_id} is not in the cart."}
         
-    del _CART[dish_id]
+    del cart[dish_id]
     return {"status": "success", "message": f"Removed dish ID {dish_id} from the cart."}
 
-def view_cart() -> Dict[str, Any]:
+def view_cart(session_id: str) -> Dict[str, Any]:
     """
     View the current contents of the shopping cart.
     
+    Args:
+        session_id (str): The current user session ID.
+        
     Returns:
         Dict[str, Any]: A dictionary containing a list of items (with full dish info, 
                         quantity, and subtotal) and the total cart value.
@@ -139,7 +151,9 @@ def view_cart() -> Dict[str, Any]:
     cart_items = []
     total_value = 0.0
     
-    for dish_id, quantity in _CART.items():
+    cart = _get_cart(session_id)
+    
+    for dish_id, quantity in cart.items():
         # Find the dish in the menu
         dish = get_dish_by_id(dish_id)
         
@@ -155,18 +169,22 @@ def view_cart() -> Dict[str, Any]:
             
     return {
     "items": cart_items,
-    "item_count": sum(_CART.values()),
+    "item_count": sum(cart.values()),
     "total": total_value
 }
 
-def clear_cart() -> Dict[str, Any]:
+def clear_cart(session_id: str) -> Dict[str, Any]:
     """
     Clear all items from the shopping cart.
     
+    Args:
+        session_id (str): The current user session ID.
+        
     Returns:
         Dict[str, Any]: A structured response indicating success.
     """
-    _CART.clear()
+    cart = _get_cart(session_id)
+    cart.clear()
     return {"status": "success", "message": "Cart cleared successfully."}
 
 def get_dish_by_id(dish_id: int) -> Dict[str, Any] | None:
@@ -176,17 +194,18 @@ def get_dish_by_id(dish_id: int) -> Dict[str, Any] | None:
     menu = load_menu()
     return next((item for item in menu if item.get("id") == dish_id), None)
 
-def place_order(customer_name: str) -> Dict[str, Any]:
+def place_order(session_id: str, customer_name: str) -> Dict[str, Any]:
     """
     Place an order for the current shopping cart.
     
     Args:
+        session_id (str): The current user session ID.
         customer_name (str): The name of the customer placing the order.
         
     Returns:
         Dict[str, Any]: A structured response indicating success or failure.
     """
-    cart = view_cart()
+    cart = view_cart(session_id)
     
     if cart.get("item_count", 0) == 0:
         return {"status": "error", "message": "Cannot place an order with an empty cart."}
@@ -210,7 +229,7 @@ def place_order(customer_name: str) -> Dict[str, Any]:
         order_id = save_order(customer_name=customer_name, items=order_items, total=total, status="Placed")
         
         # Clear the cart only after successful save
-        clear_cart()
+        clear_cart(session_id)
         
         return {
             "status": "success",
