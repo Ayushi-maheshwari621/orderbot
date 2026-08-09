@@ -6,3 +6,4 @@ langchain-groq
 langchain-core
 pydantic
 # sqlite3 (built-in)
+streamlit-geolocation

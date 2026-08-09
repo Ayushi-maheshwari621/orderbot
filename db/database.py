@@ -73,6 +73,7 @@ def initialize_database():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_restaurants_name ON restaurants(name)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_restaurants_city ON restaurants(city)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_restaurants_cuisine ON restaurants(cuisine)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_restaurants_lat_lon ON restaurants(latitude, longitude)')
 
     conn.commit()
     conn.close()
