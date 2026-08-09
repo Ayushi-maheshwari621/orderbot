@@ -1,12 +1,16 @@
+# Database
+db/orders.db
+
+# Python
 venv/
 __pycache__/
 *.pyc
-.env
-db/orderbot.db
-.streamlit/secrets.toml
-data/raw/Swiggy.csv
 
-db/orders.db
+# Raw datasets
 data/raw/
+
+# Environment
+.env
+
+# macOS
 .DS_Store
-**/.DS_Store
