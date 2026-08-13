@@ -151,6 +151,18 @@ def add_to_cart(session_id: str, dish_id: int, quantity: int) -> Dict[str, Any]:
         return {"status": "error", "message": f"Dish '{dish.get('name')}' is currently unavailable."}
         
     cart = _get_cart(session_id)
+    
+    # Ensure restaurant context consistency:
+    # All items in the cart must belong to the same restaurant_id.
+    if cart:
+        existing_dish_id = list(cart.keys())[0]
+        existing_dish = get_dish_by_id(existing_dish_id)
+        if existing_dish and str(existing_dish.get("restaurant_id")) != str(dish.get("restaurant_id")):
+            return {
+                "status": "error",
+                "message": f"Cannot add items from different restaurants. Cart contains items from restaurant '{existing_dish.get('restaurant_id')}', but this item belongs to '{dish.get('restaurant_id')}'."
+            }
+            
     cart[dish_id] = cart.get(dish_id, 0) + quantity
     return {"status": "success", "message": f"Added {quantity} of {dish.get('name')} to the cart."}
 
@@ -183,7 +195,6 @@ def view_cart(session_id: str) -> Dict[str, Any]:
         Dict[str, Any]: A dictionary containing a list of items (with full dish info, 
                         quantity, and subtotal) and the total cart value.
     """
-    menu = load_menu()
     cart_items = []
     total_value = 0.0
     
@@ -193,21 +204,30 @@ def view_cart(session_id: str) -> Dict[str, Any]:
         # Find the dish in the menu
         dish = get_dish_by_id(dish_id)
         
-        if dish:
-            subtotal = dish.get("price", 0.0) * quantity
-            total_value += subtotal
+        if not dish:
+            return {
+                "status": "error",
+                "message": f"Cart contains invalid dish ID {dish_id} which does not exist in the database. Please clear your cart and search for valid menu items.",
+                "items": [],
+                "item_count": sum(cart.values()),
+                "total": 0.0
+            }
             
-            cart_items.append({
-                "dish": dish,
-                "quantity": quantity,
-                "subtotal": subtotal
-            })
+        subtotal = dish.get("price", 0.0) * quantity
+        total_value += subtotal
+        
+        cart_items.append({
+            "dish": dish,
+            "quantity": quantity,
+            "subtotal": subtotal
+        })
             
     return {
-    "items": cart_items,
-    "item_count": sum(cart.values()),
-    "total": total_value
-}
+        "status": "success",
+        "items": cart_items,
+        "item_count": sum(cart.values()),
+        "total": total_value
+    }
 
 def clear_cart(session_id: str) -> Dict[str, Any]:
     """
@@ -263,6 +283,9 @@ def place_order(session_id: str, customer_name: str) -> Dict[str, Any]:
     """
     cart = view_cart(session_id)
     
+    if cart.get("status") == "error":
+        return {"status": "error", "message": f"Cannot place order: {cart.get('message')}"}
+        
     if cart.get("item_count", 0) == 0:
         return {"status": "error", "message": "Cannot place an order with an empty cart."}
         
