@@ -484,51 +484,45 @@ def search_restaurants(session_id: str, query: str, city: str = None, near_me: b
                 jit_city_term = f"%{user_city.strip()}%"
                 
             radius_km = 10.0 # 10 km radius
+            lat_min, lat_max, lon_min, lon_max = get_bounding_box(user_lat, user_lon, radius_km)
             
-            # Iterative JIT Geocoding to ensure we find enough valid nearby restaurants
-            max_jit_batches = 5
-            jit_offset = 0
-            results = []
-            
-            for batch in range(max_jit_batches):
-                print(f"JIT batch offset={jit_offset}")
-                # 1. JIT Geocode batch
-                candidates_processed = jit_geocode_restaurants(conn, search_term, jit_city_term, user_city, offset=jit_offset)
-                print(f"JIT batch completed offset={jit_offset}, candidates_processed={candidates_processed}")
-                
-                # 2. Bounding Box Query for all geocoded restaurants
-                lat_min, lat_max, lon_min, lon_max = get_bounding_box(user_lat, user_lon, radius_km)
-                
-                query = '''
+            def _query_spatial():
+                q = '''
                     SELECT id, name, city, address, rating, cuisine, cost_for_two, latitude, longitude
                     FROM restaurants
                     WHERE latitude IS NOT NULL
                       AND latitude BETWEEN ? AND ?
                       AND longitude BETWEEN ? AND ?
                 '''
-                params = [lat_min, lat_max, lon_min, lon_max]
-                
+                p = [lat_min, lat_max, lon_min, lon_max]
                 if search_term:
-                    query += ' AND (name LIKE ? OR cuisine LIKE ?)'
-                    params.extend([f"%{search_term}%", f"%{search_term}%"])
-                    
-                cursor.execute(query, params)
+                    q += ' AND (name LIKE ? OR cuisine LIKE ?)'
+                    p.extend([f"%{search_term}%", f"%{search_term}%"])
+                cursor.execute(q, p)
                 rows = cursor.fetchall()
-                
-                # Filter by exact Haversine distance
-                results = []
+                res = []
                 for row in rows:
                     d = dict(row)
                     dist = haversine_distance(user_lat, user_lon, d['latitude'], d['longitude'])
                     if dist <= radius_km:
                         d['distance_km'] = round(dist, 2)
-                        results.append(d)
-                
-                # If we have enough valid results or no more candidates to process, stop batching
-                if len(results) >= 5 or candidates_processed < 5:
-                    break
-                    
-                jit_offset += 5
+                        res.append(d)
+                return res
+
+            results = _query_spatial()
+            
+            # If we don't have enough results in DB, attempt JIT geocoding for un-geocoded candidates
+            if len(results) < 5:
+                max_jit_batches = 3
+                jit_offset = 0
+                for batch in range(max_jit_batches):
+                    print(f"JIT batch offset={jit_offset}")
+                    candidates_processed = jit_geocode_restaurants(conn, search_term, jit_city_term, user_city, offset=jit_offset)
+                    print(f"JIT batch completed offset={jit_offset}, candidates_processed={candidates_processed}")
+                    results = _query_spatial()
+                    if len(results) >= 5 or candidates_processed < 5:
+                        break
+                    jit_offset += 5
                 
             # Sort by distance
             results.sort(key=lambda x: x['distance_km'])
