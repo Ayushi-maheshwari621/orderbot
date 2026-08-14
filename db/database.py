@@ -32,6 +32,16 @@ def initialize_database():
         )
     ''')
     
+    # Persistent carts table keyed by session_id and dish_id
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carts (
+            session_id TEXT NOT NULL,
+            dish_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL,
+            PRIMARY KEY (session_id, dish_id)
+        )
+    ''')
+    
     # New restaurants table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS restaurants (

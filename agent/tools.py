@@ -124,9 +124,54 @@ def set_user_location(session_id: str, location_query: str) -> Dict[str, Any]:
         return {"status": "error", "message": f"Could not find coordinates for '{location_query}'. Please try a more specific address or city."}
 
 def _get_cart(session_id: str) -> Dict[int, int]:
-    if session_id not in _CARTS:
-        _CARTS[session_id] = {}
-    return _CARTS[session_id]
+    cart: Dict[int, int] = {}
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT dish_id, quantity FROM carts WHERE session_id = ?", (session_id,))
+        rows = cursor.fetchall()
+        for r in rows:
+            cart[int(r[0])] = int(r[1])
+        conn.close()
+    except Exception as e:
+        print(f"Error loading cart from DB: {e}")
+    # Sync in-memory cache as well
+    _CARTS[session_id] = cart
+    return cart
+
+def _save_cart_item(session_id: str, dish_id: int, quantity: int):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO carts (session_id, dish_id, quantity)
+            VALUES (?, ?, ?)
+            ON CONFLICT(session_id, dish_id) DO UPDATE SET quantity = excluded.quantity
+        ''', (session_id, dish_id, quantity))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error saving cart item to DB: {e}")
+
+def _delete_cart_item(session_id: str, dish_id: int):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM carts WHERE session_id = ? AND dish_id = ?", (session_id, dish_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error deleting cart item from DB: {e}")
+
+def _clear_cart_db(session_id: str):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM carts WHERE session_id = ?", (session_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error clearing cart from DB: {e}")
 
 def add_to_cart(session_id: str, dish_id: int, quantity: int) -> Dict[str, Any]:
     """
@@ -164,7 +209,9 @@ def add_to_cart(session_id: str, dish_id: int, quantity: int) -> Dict[str, Any]:
                 "message": f"Cannot add items from different restaurants. Cart contains items from restaurant '{existing_dish.get('restaurant_id')}', but this item belongs to '{dish.get('restaurant_id')}'."
             }
             
-    cart[dish_id] = cart.get(dish_id, 0) + quantity
+    new_qty = cart.get(dish_id, 0) + quantity
+    cart[dish_id] = new_qty
+    _save_cart_item(session_id, dish_id, new_qty)
     return {"status": "success", "message": f"Added {quantity} of {dish.get('name')} to the cart."}
 
 def remove_from_cart(session_id: str, dish_id: int) -> Dict[str, Any]:
@@ -183,6 +230,7 @@ def remove_from_cart(session_id: str, dish_id: int) -> Dict[str, Any]:
         return {"status": "error", "message": f"Dish with ID {dish_id} is not in the cart."}
         
     del cart[dish_id]
+    _delete_cart_item(session_id, dish_id)
     return {"status": "success", "message": f"Removed dish ID {dish_id} from the cart."}
 
 def view_cart(session_id: str) -> Dict[str, Any]:
@@ -242,6 +290,7 @@ def clear_cart(session_id: str) -> Dict[str, Any]:
     """
     cart = _get_cart(session_id)
     cart.clear()
+    _clear_cart_db(session_id)
     return {"status": "success", "message": "Cart cleared successfully."}
 
 def get_dish_by_id(dish_id: int) -> Dict[str, Any] | None:
