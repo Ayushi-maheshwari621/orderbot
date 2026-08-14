@@ -1,9 +1,9 @@
 streamlit
 python-dotenv
-groq
 langchain
-langchain-groq
 langchain-core
+langchain-google-genai
+langgraph
+requests
 pydantic
-# sqlite3 (built-in)
 streamlit-geolocation
