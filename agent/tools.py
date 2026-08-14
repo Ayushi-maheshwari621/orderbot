@@ -61,7 +61,8 @@ def search_menu(query: str, restaurant_id: str | None = None) -> List[Dict[str, 
                 SELECT id, restaurant_id, name, category, price, is_veg, currency 
                 FROM menu_items 
                 WHERE restaurant_id = ?
-                LIMIT 20
+                ORDER BY category ASC, name ASC
+                LIMIT 50
             ''', (restaurant_id,))
         elif not query or not query.strip():
             return []

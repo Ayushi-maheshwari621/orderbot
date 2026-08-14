@@ -1053,6 +1053,9 @@ def init_app():
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
+    if "last_order_confirmation" not in st.session_state:
+        st.session_state.last_order_confirmation = None    
+
     # Get current location & cart state for Header & Sidebar
     current_loc = _USER_LOCATIONS.get(st.session_state.session_id)
     loc_display = "Unknown"
@@ -1314,24 +1317,36 @@ def init_app():
                     else:
                         order_res = agent_tools.place_order(st.session_state.session_id, customer_name=name.strip())
                         if order_res.get("status") == "success":
-                            st.session_state.show_checkout_form = False
                             order_id = order_res.get("order_id", "N/A")
                             total_val = order_res.get("total", grand_total)
-                            instr_str = f"\n• **Instructions**: {instructions.strip()}" if instructions.strip() else ""
+                            instr_str = (
+                                f"\n• **Instructions**: {instructions.strip()}"
+                                if instructions.strip()
+                                else ""
+                            )
+
                             success_msg = (
-                                f"🎉 Order placed successfully!\n\n"
+                                f"🎉 **Order placed successfully!**\n\n"
                                 f"• **Order ID**: #{order_id}\n"
                                 f"• **Customer**: {name.strip()} ({phone.strip()})\n"
-                                f"• **Delivery Address**: {address.strip()}, {city.strip()}, {state.strip()} - {pincode.strip()}"
+                                f"• **Delivery Address**: "
+                                f"{address.strip()}, {city.strip()}, {state.strip()} - {pincode.strip()}"
                                 f"{instr_str}\n"
                                 f"• **Payment Method**: 💵 Cash on Delivery\n"
                                 f"• **Total Amount**: ₹{total_val:.2f}"
                             )
+
+                            # Persist confirmation independently of cart state
+                            st.session_state.last_order_confirmation = success_msg
                             st.session_state.messages.append({
                                 "role": "assistant",
                                 "content": success_msg,
                                 "structured": None
                             })
+
+                            # Close checkout after successful order
+                            st.session_state.show_checkout_form = False
+
                             st.rerun()
                         else:
                             st.error(order_res.get("message", "Failed to place order."))
@@ -1346,6 +1361,13 @@ def init_app():
                 <div class="cart-empty-sub">Discover local restaurants & add delicious dishes to get started!</div>
             </div>
             """, unsafe_allow_html=True)
+
+    if st.session_state.get("last_order_confirmation"):
+        st.success(
+            st.session_state.last_order_confirmation,
+            icon="🎉"
+        )
+        
 
     # 4. Display Existing Chat History
     for item in st.session_state.messages:
